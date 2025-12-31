@@ -28,14 +28,35 @@ void task1(void *arg)
     }
 }
 
+QueueHandle_t q;
+
+void producer(void *arg)
+{
+    int cnt = 0;
+    while (1) {
+        xQueueSend(q, &cnt, portMAX_DELAY);
+        cnt++;
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void consumer(void *arg)
+{
+    int val;
+    while (1) {
+        if (xQueueReceive(q, &val, portMAX_DELAY)) {
+            ESP_LOGI("CONS", "val=%d", val);
+        }
+    }
+}
+
+
 void app_main(void)
 {
-    xTaskCreate(
-        task1,
-        "task1",
-        4096,
-        NULL,
-        5,
-        NULL
-    );
+    q = xQueueCreate(10, sizeof(int));
+    configASSERT(q);
+    xTaskCreate(task1, "task1", 4096, NULL, 4, NULL);
+    xTaskCreate(producer, "producer", 4096, NULL, 5, NULL);
+    xTaskCreate(consumer, "consumer", 4096, NULL, 6, NULL);
+
 }
