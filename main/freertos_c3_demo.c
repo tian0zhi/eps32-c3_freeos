@@ -208,7 +208,7 @@ void pwm_hw_init(void)
 
 void pwm_ctrl_task(void *arg)
 {
-    TickType_t lastWake = xTaskGetTickCount();
+    // TickType_t lastWake = xTaskGetTickCount();
     ledc_channel_config_t ch0 = {
         .gpio_num = 2,
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -247,19 +247,19 @@ void pwm_ctrl_task(void *arg)
             ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
             ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
         }
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(500));
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(500));
         ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 400);    // 修改频率为400Hz
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);  // 确保占空比不变
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);    // 生效占空比
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(500));
 
         // 停止 PWM
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
         ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 2000);    // 修改频率为2kHz
         ESP_LOGI("PWM","PWM OFF");
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(20000));
+        //vTaskDelay(pdMS_TO_TICKS(20000));
     }
 }
 
@@ -339,10 +339,10 @@ void udp_server_task(void *arg)
                     break;
                 }
 
-                rx_buffer[len] = 0;
+                rx_buffer[len] = '\0';
                 ESP_LOGI("UDP", "Data: %s", rx_buffer);
                 // 比较 rx_buffer 与字符串 "run" 是否相等
-                if (strcmp(rx_buffer, "run") == 0) 
+                if (strncmp(rx_buffer, "run", 3) == 0) 
                 {
                     ESP_LOGI("UDP", "ctrl successfully!!");
                     pwm_isr_handler(NULL);
@@ -375,7 +375,7 @@ void app_main(void)
         "led_task",
         2048,
         NULL,
-        5,
+        3,
         &led_task_handle
     );
 
@@ -385,7 +385,7 @@ void app_main(void)
         "PeriodTask_isr",
         2048,
         NULL,
-        6,
+        3,
         NULL
     );
     // 创建 PWM 控制任务
@@ -394,7 +394,7 @@ void app_main(void)
         "pwm_ctrl_task",
         2048,
         NULL,
-        8,
+        7,
         &pwm_task_handle
     );
 
@@ -404,7 +404,7 @@ void app_main(void)
         "wifi_monitor", 
         4096, 
         NULL, 
-        7, 
+        3, 
         NULL);
 
     /* 创建 UDP 服务器任务 */
