@@ -165,49 +165,60 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 }
 
 // GPIO PWM 部分
-void pwm_ctrl_task(void *arg)
-{
-    TickType_t lastWake = xTaskGetTickCount();
-
-    while (1) {
-        // 开启 PWM
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
-        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-        printf("PWM ON\n");
-
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1000));
-
-        // 停止 PWM
-        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        printf("PWM OFF\n");
-
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
-    }
-}
-
-
-
 void pwm_hw_init(void)
 {
-    ledc_timer_config_t timer = {
+    // 不同频率，定时器初始化
+    ledc_timer_config_t timer0 = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .timer_num = LEDC_TIMER_0,
         .freq_hz = 2000,        // 2 kHz
         .duty_resolution = LEDC_TIMER_10_BIT,
         .clk_cfg = LEDC_AUTO_CLK
-    };
-    ledc_timer_config(&timer);
+    };// 正转
+    ledc_timer_config_t timer1 = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .timer_num = LEDC_TIMER_1,
+        .freq_hz = 400,        // 400Hz
+        .duty_resolution = LEDC_TIMER_10_BIT,
+        .clk_cfg = LEDC_AUTO_CLK
+    };// 反转
+    ledc_timer_config(&timer0);
+    ledc_timer_config(&timer1);
 
-    ledc_channel_config_t ch = {
+}
+
+void pwm_ctrl_task(void *arg)
+{
+    TickType_t lastWake = xTaskGetTickCount();
+    ledc_channel_config_t ch0 = {
         .gpio_num = 2,
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = LEDC_CHANNEL_0,
         .timer_sel = LEDC_TIMER_0,
         .duty = 512, // 50%
     };
-    ledc_channel_config(&ch);
-    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-    printf("PWM OFF\n");
+    ledc_channel_config_t ch1 = {
+        .gpio_num = 2,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_1,
+        .timer_sel = LEDC_TIMER_1,
+        .duty = 512, // 50%
+    };
+
+while (1)
+    {
+        // 开启 PWM
+        ESP_LOGI("PWM:","PWM ON\n");
+        ledc_channel_config(&ch0);
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
+        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+        ledc_channel_config(&ch1);
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
+        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+        // 停止 PWM
+        ESP_LOGI("PWM:","PWM OFF\n");
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(20000));
+    }
 }
 
 // 周期性任务，模拟中断触发
