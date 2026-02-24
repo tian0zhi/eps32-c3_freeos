@@ -104,7 +104,7 @@ void wifi_monitor_task(void *arg)
 
 /* 任务句柄 */
 static TaskHandle_t led_task_handle = NULL;
-
+static TaskHandle_t pwm_task_handle = NULL;
 /* ==================== LED 任务 ==================== */
 static void led_task(void *arg)
 {
@@ -151,7 +151,26 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 
     /* 向 LED 任务发送通知 */
     xTaskNotifyFromISR(
-        led_task_handle,           // 要通知的任务
+        led_task_handle,            // 要通知的任务
+        1,                          // 通知值（这里值本身无所谓）
+        eSetValueWithOverwrite,     // 覆盖方式
+        &xHigherPriorityTaskWoken
+    );
+
+    /* 如果唤醒了更高优先级任务，立刻切换 */
+    if (xHigherPriorityTaskWoken)
+    {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static void IRAM_ATTR pwm_isr_handler(void *arg)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    /* 向 LED 任务发送通知 */
+    xTaskNotifyFromISR(
+        pwm_task_handle,            // 要通知的任务
         1,                          // 通知值（这里值本身无所谓）
         eSetValueWithOverwrite,     // 覆盖方式
         &xHigherPriorityTaskWoken
@@ -205,11 +224,19 @@ void pwm_ctrl_task(void *arg)
     //     .duty = 512, // 50%
     // };
     int flage = 0;
+    uint32_t notify_value;
 
     while (1)
     {
+        /* 阻塞等待 ISR 通知 */
+        xTaskNotifyWait(
+            0,                  // 不清除进入时的通知
+            0xFFFFFFFF,         // 退出时清除所有通知
+            &notify_value,      // 接收通知值
+            portMAX_DELAY       // 一直等
+        );
         // 开启 PWM
-        ESP_LOGI("PWM:","PWM ON\n");
+        ESP_LOGI("PWM","PWM ON");
         if(flage == 0)
         {
             ledc_channel_config(&ch0);
@@ -222,6 +249,7 @@ void pwm_ctrl_task(void *arg)
         }
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
         ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 400);    // 修改频率为400Hz
         ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);  // 确保占空比不变
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);    // 生效占空比
@@ -230,7 +258,7 @@ void pwm_ctrl_task(void *arg)
         // 停止 PWM
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
         ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 2000);    // 修改频率为2kHz
-        ESP_LOGI("PWM:","PWM OFF\n");
+        ESP_LOGI("PWM","PWM OFF");
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(20000));
     }
 }
@@ -313,6 +341,12 @@ void udp_server_task(void *arg)
 
                 rx_buffer[len] = 0;
                 ESP_LOGI("UDP", "Data: %s", rx_buffer);
+                // 比较 rx_buffer 与字符串 "run" 是否相等
+                if (strcmp(rx_buffer, "run") == 0) 
+                {
+                    ESP_LOGI("UDP", "ctrl successfully!!");
+                    pwm_isr_handler(NULL);
+                }
             }
         }
 
@@ -353,6 +387,15 @@ void app_main(void)
         NULL,
         6,
         NULL
+    );
+    // 创建 PWM 控制任务
+    xTaskCreate(
+        pwm_ctrl_task,
+        "pwm_ctrl_task",
+        2048,
+        NULL,
+        8,
+        &pwm_task_handle
     );
 
     /* 创建 WiFi 监控任务 */
