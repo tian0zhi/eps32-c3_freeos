@@ -5,8 +5,6 @@
 #include "esp_log.h"
 #include "driver/ledc.h"
 
-#define TAG "GPIO_NOTIFY_DEMO"
-
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "nvs_flash.h"
@@ -18,9 +16,10 @@
 #include "lwip/sockets.h"
 #include "lwip/inet.h"
 
+#define TAG "GPIO_NOTIFY"
+
 // 网络管理部分
 static const char *WIFI_TAG = "WIFI";
-
 typedef enum {
     WIFI_DISCONNECTED = 0,
     WIFI_CONNECTING,
