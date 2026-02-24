@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "driver/ledc.h"
 
 #define TAG "GPIO_NOTIFY_DEMO"
 
@@ -73,6 +74,50 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 }
 
 
+void pwm_ctrl_task(void *arg)
+{
+    TickType_t lastWake = xTaskGetTickCount();
+
+    while (1) {
+        // 开启 PWM
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+        printf("PWM ON\n");
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1000));
+
+        // 停止 PWM
+        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+        printf("PWM OFF\n");
+
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
+    }
+}
+
+
+
+void pwm_hw_init(void)
+{
+    ledc_timer_config_t timer = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = 2000,        // 2 kHz
+        .duty_resolution = LEDC_TIMER_10_BIT,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&timer);
+
+    ledc_channel_config_t ch = {
+        .gpio_num = 2,
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .channel = LEDC_CHANNEL_0,
+        .timer_sel = LEDC_TIMER_0,
+        .duty = 512, // 50%
+    };
+    ledc_channel_config(&ch);
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    printf("PWM OFF\n");
+}
 void PeriodTask_isr(void *param)
 {
     TickType_t lastWake = xTaskGetTickCount();
@@ -84,8 +129,6 @@ void PeriodTask_isr(void *param)
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
     }
 }
-
-
 /* ==================== 主函数 ==================== */
 void app_main(void)
 {
@@ -98,6 +141,7 @@ void app_main(void)
         .intr_type = GPIO_INTR_POSEDGE,         // 上升沿中断
     };
     gpio_config(&input_cfg);
+    pwm_hw_init();
 
     /* 创建 LED 任务 */
     xTaskCreate(
@@ -109,7 +153,7 @@ void app_main(void)
         &led_task_handle
     );
 
-    /* 创建周期性任务 */
+    /* 创建周期性任务, 周期性执行中断触发函数  */
     xTaskCreate(
         PeriodTask_isr,
         "PeriodTask_isr",
