@@ -175,15 +175,15 @@ void pwm_hw_init(void)
         .duty_resolution = LEDC_TIMER_10_BIT,
         .clk_cfg = LEDC_AUTO_CLK
     };// 正转
-    ledc_timer_config_t timer1 = {
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .timer_num = LEDC_TIMER_1,
-        .freq_hz = 400,        // 400Hz
-        .duty_resolution = LEDC_TIMER_10_BIT,
-        .clk_cfg = LEDC_AUTO_CLK
-    };// 反转
+    // ledc_timer_config_t timer1 = {
+    //     .speed_mode = LEDC_LOW_SPEED_MODE,
+    //     .timer_num = LEDC_TIMER_1,
+    //     .freq_hz = 400,        // 400Hz
+    //     .duty_resolution = LEDC_TIMER_10_BIT,
+    //     .clk_cfg = LEDC_AUTO_CLK
+    // };// 反转
     ledc_timer_config(&timer0);
-    ledc_timer_config(&timer1);
+    // ledc_timer_config(&timer1);
 
 }
 
@@ -197,25 +197,39 @@ void pwm_ctrl_task(void *arg)
         .timer_sel = LEDC_TIMER_0,
         .duty = 512, // 50%
     };
-    ledc_channel_config_t ch1 = {
-        .gpio_num = 2,
-        .speed_mode = LEDC_LOW_SPEED_MODE,
-        .channel = LEDC_CHANNEL_1,
-        .timer_sel = LEDC_TIMER_1,
-        .duty = 512, // 50%
-    };
+    // ledc_channel_config_t ch1 = {
+    //     .gpio_num = 2,
+    //     .speed_mode = LEDC_LOW_SPEED_MODE,
+    //     .channel = LEDC_CHANNEL_1,
+    //     .timer_sel = LEDC_TIMER_1,
+    //     .duty = 512, // 50%
+    // };
+    int flage = 0;
 
-while (1)
+    while (1)
     {
         // 开启 PWM
         ESP_LOGI("PWM:","PWM ON\n");
-        ledc_channel_config(&ch0);
+        if(flage == 0)
+        {
+            ledc_channel_config(&ch0);
+            flage = 1;
+        }
+        else
+        {
+            ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
+            ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+        }
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_channel_config(&ch1);
+        ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 400);    // 修改频率为400Hz
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);  // 确保占空比不变
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);    // 生效占空比
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(500));
-        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, 0);
+
         // 停止 PWM
+        ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+        ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 2000);    // 修改频率为2kHz
         ESP_LOGI("PWM:","PWM OFF\n");
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(20000));
     }
@@ -245,7 +259,8 @@ void udp_server_task(void *arg)
     struct sockaddr_in addr, source_addr;
     socklen_t socklen = sizeof(source_addr);
 
-    while (1) {
+    while (1) 
+    {
 
         // 等待 WiFi 连接
         while (g_wifi_state != WIFI_CONNECTED) {
