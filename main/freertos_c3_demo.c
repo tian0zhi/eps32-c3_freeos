@@ -7,6 +7,97 @@
 
 #define TAG "GPIO_NOTIFY_DEMO"
 
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
+
+#include <stdatomic.h>
+
+#include <string.h>
+
+#include "lwip/sockets.h"
+#include "lwip/inet.h"
+
+// 网络管理部分
+static const char *WIFI_TAG = "WIFI";
+
+typedef enum {
+    WIFI_DISCONNECTED = 0,
+    WIFI_CONNECTING,
+    WIFI_CONNECTED
+} wifi_state_t;
+
+volatile wifi_state_t g_wifi_state = WIFI_DISCONNECTED;
+static void wifi_event_handler(void *arg, esp_event_base_t event_base,
+                               int32_t event_id, void *event_data)
+{
+    if (event_base == WIFI_EVENT) {
+
+        if (event_id == WIFI_EVENT_STA_START) {
+            ESP_LOGI(WIFI_TAG, "WiFi started");
+            g_wifi_state = WIFI_CONNECTING;
+            esp_wifi_connect();
+        }
+
+        else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
+            ESP_LOGW(WIFI_TAG, "WiFi disconnected");
+            g_wifi_state = WIFI_DISCONNECTED;
+        }
+    }
+
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(WIFI_TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        g_wifi_state = WIFI_CONNECTED;
+    }
+}
+
+void wifi_init_sta(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    esp_netif_init();
+    esp_event_loop_create_default();
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_wifi_init(&cfg);
+
+    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL);
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = "CU_aW7P",
+            .password = "rqnumgrn",
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    esp_wifi_start();
+}
+
+void wifi_monitor_task(void *arg)
+{
+    while (1) {
+        if (g_wifi_state == WIFI_DISCONNECTED) {
+            ESP_LOGW("WIFI_MON", "WiFi lost, reconnecting...");
+            g_wifi_state = WIFI_CONNECTING;
+            esp_wifi_connect();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 每5秒检查一次
+    }
+}
+
+// GPIO 灯控部分
 /* GPIO 定义 */
 #define GPIO_INPUT      GPIO_NUM_4
 #define GPIO_LED        GPIO_NUM_1
@@ -73,7 +164,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     }
 }
 
-
+// GPIO PWM 部分
 void pwm_ctrl_task(void *arg)
 {
     TickType_t lastWake = xTaskGetTickCount();
@@ -118,6 +209,8 @@ void pwm_hw_init(void)
     ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
     printf("PWM OFF\n");
 }
+
+// 周期性任务，模拟中断触发
 void PeriodTask_isr(void *param)
 {
     TickType_t lastWake = xTaskGetTickCount();
@@ -127,6 +220,78 @@ void PeriodTask_isr(void *param)
         gpio_isr_handler(NULL);
         // 周期性执行
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(10000));
+    }
+}
+
+// 网络任务部分
+
+#define UDP_PORT 3358
+#define BUF_SIZE 512
+
+void udp_server_task(void *arg)
+{
+    char rx_buffer[BUF_SIZE];
+    struct sockaddr_in addr, source_addr;
+    socklen_t socklen = sizeof(source_addr);
+
+    while (1) {
+
+        // 等待 WiFi 连接
+        while (g_wifi_state != WIFI_CONNECTED) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+
+        int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+        if (sock < 0) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(UDP_PORT);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+        bind(sock, (struct sockaddr *)&addr, sizeof(addr));
+
+        ESP_LOGI("UDP", "UDP server started");
+
+        while (g_wifi_state == WIFI_CONNECTED) {
+
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(sock, &readfds);
+
+            struct timeval tv;
+            tv.tv_sec = 2;   // 2秒超时
+            tv.tv_usec = 0;
+
+            int ret = select(sock + 1, &readfds, NULL, NULL, &tv);
+
+            if (ret < 0) {
+                ESP_LOGE("UDP", "select error");
+                break;
+            } 
+            else if (ret == 0) {
+                // 超时
+                ESP_LOGD("UDP", "select timeout");
+                continue;
+            }
+
+            if (FD_ISSET(sock, &readfds)) {
+                int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0,
+                                   (struct sockaddr *)&source_addr, &socklen);
+                if (len < 0) {
+                    ESP_LOGW("UDP", "recv error");
+                    break;
+                }
+
+                rx_buffer[len] = 0;
+                ESP_LOGI("UDP", "Data: %s", rx_buffer);
+            }
+        }
+
+        close(sock);
+        ESP_LOGW("UDP", "Socket closed, wait reconnect");
     }
 }
 /* ==================== 主函数 ==================== */
@@ -142,6 +307,7 @@ void app_main(void)
     };
     gpio_config(&input_cfg);
     pwm_hw_init();
+    wifi_init_sta();
 
     /* 创建 LED 任务 */
     xTaskCreate(
@@ -162,6 +328,24 @@ void app_main(void)
         6,
         NULL
     );
+
+    /* 创建 WiFi 监控任务 */
+    xTaskCreate(
+        wifi_monitor_task, 
+        "wifi_monitor", 
+        4096, 
+        NULL, 
+        7, 
+        NULL);
+
+    /* 创建 UDP 服务器任务 */
+    xTaskCreate(
+        udp_server_task, 
+        "udp_server_task", 
+        4096, 
+        NULL, 
+        6, 
+        NULL);
 
     /* 安装 GPIO ISR 服务 */
     gpio_install_isr_service(0);
