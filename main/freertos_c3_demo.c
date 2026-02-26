@@ -189,7 +189,7 @@ void pwm_hw_init(void)
     ledc_timer_config_t timer0 = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .timer_num = LEDC_TIMER_0,
-        .freq_hz = 2000,        // 2 kHz
+        .freq_hz = 50,        // 50Hz
         .duty_resolution = LEDC_TIMER_10_BIT,
         .clk_cfg = LEDC_AUTO_CLK
     };// 正转
@@ -213,15 +213,8 @@ void pwm_ctrl_task(void *arg)
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .channel = LEDC_CHANNEL_0,
         .timer_sel = LEDC_TIMER_0,
-        .duty = 512, // 50%
+        .duty = 25, // (25/1024)*20 = %
     };
-    // ledc_channel_config_t ch1 = {
-    //     .gpio_num = 2,
-    //     .speed_mode = LEDC_LOW_SPEED_MODE,
-    //     .channel = LEDC_CHANNEL_1,
-    //     .timer_sel = LEDC_TIMER_1,
-    //     .duty = 512, // 50%
-    // };
     int flage = 0;
     uint32_t notify_value;
 
@@ -243,20 +236,20 @@ void pwm_ctrl_task(void *arg)
         }
         else
         {
-            ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);
+            // ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 2000);    // 修改频率为2kHz
+            ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 25);
             ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        vTaskDelay(pdMS_TO_TICKS(500));
-        ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 400);    // 修改频率为400Hz
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 512);  // 确保占空比不变
+        vTaskDelay(pdMS_TO_TICKS(200));
+        // ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 400);    // 修改频率为400Hz
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 128);  // 确保占空比不变
         ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);    // 生效占空比
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(1000));
 
         // 停止 PWM
         ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
-        ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, 2000);    // 修改频率为2kHz
         ESP_LOGI("PWM","PWM OFF");
         //vTaskDelay(pdMS_TO_TICKS(20000));
     }
